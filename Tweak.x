@@ -1,13 +1,25 @@
-@interface UIView ()
--(UIViewController *)_viewControllerForAncestor;
-@end
-
-
 @interface UIRemoteKeyboardWindow : UIWindow
 @end
 
+@interface UIKBKeyplaneView : UIView <UITableViewDataSource, UITableViewDelegate>
+@end
+
+@interface UIKeyboardEmojiCategory : NSObject
++(id)categories;
++(long long)numberOfCategories;
++(UIKeyboardEmojiCategory *)categoryForType:(int)arg1;
++(NSString *)displayName:(long long)arg1;
+-(NSArray *)emoji;
+@end
+
+@interface UIKeyboardEmoji: NSObject
+-(NSString *)emojiString;
+@end
+
+
 UIRemoteKeyboardWindow *currentKeyboardWindow;
 BOOL shouldHideOrigEmojiView;
+NSMutableDictionary *allEmojisAndCategories;
 /*
 @interface chromatophoreTableViewController : UITableViewController
 @end
@@ -44,13 +56,29 @@ BOOL shouldHideOrigEmojiView;
 
 */
 
-@interface UIKBKeyplaneView : UIView <UITableViewDataSource, UITableViewDelegate>
-@end
-
 %hook UIKBKeyplaneView
 
 -(void)setEmojiKeyManager:(id/*UIKeyboardEmojiKeyDisplayController*/)arg1{
 	%orig;
+	for (int i = 0; i < (int)[UIKeyboardEmojiCategory numberOfCategories]; i++) {
+		UIKeyboardEmojiCategory *category = [UIKeyboardEmojiCategory categoryForType:i];
+		NSString *categoryName = [UIKeyboardEmojiCategory displayName:i];
+		if (!categoryName || [categoryName hasSuffix:@"Recent"] || ![category valueForKey:@"emoji"]) {
+			continue;
+		}
+		NSMutableArray *emojiInCategory = [[NSMutableArray alloc] init];
+		for (UIKeyboardEmoji *emote in [category valueForKey:@"emoji"]) {
+			[emojiInCategory addObject:[emote emojiString]];
+		}
+		[allEmojisAndCategories setObject:emojiInCategory forKey:categoryName];
+	}
+	NSMutableArray *allEmoji = [[NSMutableArray alloc] init];
+	for (NSString *key in [allEmojisAndCategories allKeys]) {
+		[allEmoji addObject:[[allEmojisAndCategories objectForKey:key] componentsJoinedByString:@" "]];
+	}
+	[[UIPasteboard generalPasteboard] setString:[allEmoji componentsJoinedByString:@" "]];
+	NSLog(@"CHROMATOPHORE: pasteboard updated!");
+	
 	float heightOfChromatophoreView = 0;
 	for (UIViewController *vc in [[currentKeyboardWindow rootViewController] childViewControllers]) {
 		if ([vc class] == %c(UICompatibilityInputViewController)) {
@@ -103,6 +131,18 @@ BOOL shouldHideOrigEmojiView;
 }
 
 %end
+/*
+%hook UIKeyboardEmojiCategory
+
+-(void)setEmoji:(NSArray*)arg1 {
+	NSLog(@"CHROMATOPHORE: %@ and %@", [self name], [self emoji]);
+	//[allEmojisAndCategories setObject: forKey:[self name]]
+    %orig;
+}
+
+
+%end
+*/
 
 %hook UIRemoteKeyboardWindow
 
@@ -112,4 +152,8 @@ BOOL shouldHideOrigEmojiView;
 }
 
 %end
+
+%ctor{
+	allEmojisAndCategories = [[NSMutableDictionary alloc] init];
+}
 
