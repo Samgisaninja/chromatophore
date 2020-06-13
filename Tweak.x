@@ -63,22 +63,18 @@ NSMutableDictionary *allEmojisAndCategories;
 	for (int i = 0; i < (int)[UIKeyboardEmojiCategory numberOfCategories]; i++) {
 		UIKeyboardEmojiCategory *category = [UIKeyboardEmojiCategory categoryForType:i];
 		NSString *categoryName = [UIKeyboardEmojiCategory displayName:i];
-		if (!categoryName || [categoryName hasSuffix:@"Recent"] || ![category valueForKey:@"emoji"]) {
+		if (!categoryName || [categoryName containsString:@"Recent"] || [categoryName containsString:@"Frequently"] || ![category valueForKey:@"emoji"]) {
 			continue;
 		}
 		NSMutableArray *emojiInCategory = [[NSMutableArray alloc] init];
 		for (UIKeyboardEmoji *emote in [category valueForKey:@"emoji"]) {
 			[emojiInCategory addObject:[emote emojiString]];
 		}
-		[allEmojisAndCategories setObject:emojiInCategory forKey:categoryName];
+		NSDictionary *categoryDict = @{
+			 categoryName : emojiInCategory
+		};
+		[allEmojisAndCategories setObject:categoryDict forKey:[NSString stringWithFormat:@"%d", (int)[[allEmojisAndCategories allKeys] count]]];
 	}
-	NSMutableArray *allEmoji = [[NSMutableArray alloc] init];
-	for (NSString *key in [allEmojisAndCategories allKeys]) {
-		[allEmoji addObject:[[allEmojisAndCategories objectForKey:key] componentsJoinedByString:@" "]];
-	}
-	[[UIPasteboard generalPasteboard] setString:[allEmoji componentsJoinedByString:@" "]];
-	NSLog(@"CHROMATOPHORE: pasteboard updated!");
-	
 	float heightOfChromatophoreView = 0;
 	for (UIViewController *vc in [[currentKeyboardWindow rootViewController] childViewControllers]) {
 		if ([vc class] == %c(UICompatibilityInputViewController)) {
@@ -106,19 +102,24 @@ NSMutableDictionary *allEmojisAndCategories;
 }
 
 %new
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section{
+	return 	[[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)section]] allKeys] objectAtIndex:0];
+}
+
+%new
 -(NSInteger)numberOfSectionsInTableView:(UITableView *)tableView{
-	return 1;
+	return [[allEmojisAndCategories allKeys] count];
 }
 
 %new
 -(NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section{
-	return 100;
+	return [[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)section]] objectForKey:[[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)section]] allKeys] objectAtIndex:0]] count];
 }
 
 %new
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"chromatophoreReuseIdentifier" forIndexPath:indexPath];
-	[[cell textLabel] setText:[NSString stringWithFormat:@"%d", (int)[indexPath row]]];
+	[[cell textLabel] setText:[[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)[indexPath section]]] objectForKey:[[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)[indexPath section]]] allKeys] objectAtIndex:0]] objectAtIndex:[indexPath row]]];
 	[[cell contentView] setBackgroundColor:[UIColor clearColor]];
 	[[cell backgroundView] setBackgroundColor:[UIColor clearColor]];
 	[cell setBackgroundColor:[UIColor clearColor]];
@@ -127,22 +128,10 @@ NSMutableDictionary *allEmojisAndCategories;
 
 %new
 -(void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath{
-	NSLog(@"CHROMATOPHRE! %d", (int)[indexPath row]);
+	
 }
 
 %end
-/*
-%hook UIKeyboardEmojiCategory
-
--(void)setEmoji:(NSArray*)arg1 {
-	NSLog(@"CHROMATOPHORE: %@ and %@", [self name], [self emoji]);
-	//[allEmojisAndCategories setObject: forKey:[self name]]
-    %orig;
-}
-
-
-%end
-*/
 
 %hook UIRemoteKeyboardWindow
 
