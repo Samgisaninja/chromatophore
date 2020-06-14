@@ -24,7 +24,7 @@
 UIRemoteKeyboardWindow *currentKeyboardWindow;
 BOOL shouldHideOrigEmojiView;
 NSMutableDictionary *allEmojisAndCategories;
-UIView *chromatophoreView;
+UIView *chromatophoreBackgroundView;
 UITableView *chromatophoreTableView;
 UIKBKeyplaneView *currentKBKeyplaneView;
 UIButton *returnToKeyboardButton;
@@ -33,9 +33,11 @@ UIButton *returnToKeyboardButton;
 static void apoptosis(){
 	shouldHideOrigEmojiView = FALSE;
 	[currentKBKeyplaneView setHidden:FALSE];
+	[chromatophoreBackgroundView removeFromSuperview];
+	chromatophoreBackgroundView = nil;
 	[returnToKeyboardButton removeFromSuperview];
-	[chromatophoreTableView removeFromSuperview];
 	returnToKeyboardButton = nil;
+	[chromatophoreTableView removeFromSuperview];
 	chromatophoreTableView = nil;
 }
 /*
@@ -93,7 +95,7 @@ static void apoptosis(){
 
 %hook UIKBKeyplaneView
 
--(void)setEmojiKeyManager:(id/*UIKeyboardEmojiKeyDisplayController*/)arg1{
+-(void)setEmojiKeyManager:(id/*UIKeyboardEmojiKeyDisplayController**/)arg1{
 	%orig;
 	currentKBKeyplaneView = self;
 	for (int i = 0; i < (int)[UIKeyboardEmojiCategory numberOfCategories]; i++) {
@@ -119,17 +121,21 @@ static void apoptosis(){
 		}
 	}
 	CGRect screenRect = [[UIScreen mainScreen] bounds];
+	chromatophoreBackgroundView = [[UIView alloc] initWithFrame:CGRectMake(0, (screenRect.size.height - heightOfChromatophoreView), screenRect.size.width, heightOfChromatophoreView)];
+	[chromatophoreBackgroundView setBackgroundColor:[UIColor clearColor]];
+	[chromatophoreBackgroundView setUserInteractionEnabled:FALSE];
 	returnToKeyboardButton = [UIButton buttonWithType:UIButtonTypeCustom];
 	[returnToKeyboardButton addTarget:self action:@selector(apoptosis) forControlEvents:UIControlEventTouchUpInside];
 	[returnToKeyboardButton setTitle:@"Return to Keyboard" forState:UIControlStateNormal];
+	[[returnToKeyboardButton titleLabel] setFont:[UIFont systemFontOfSize:15]];
 	[returnToKeyboardButton sizeToFit];
-	[returnToKeyboardButton setFrame:CGRectMake(10, (screenRect.size.height - heightOfChromatophoreView + 25 - (returnToKeyboardButton.frame.size.height/2)), returnToKeyboardButton.frame.size.width, returnToKeyboardButton.frame.size.height)];
+	[returnToKeyboardButton setFrame:CGRectMake((screenRect.size.width - returnToKeyboardButton.frame.size.width - 10), (screenRect.size.height - heightOfChromatophoreView + 25 - (returnToKeyboardButton.frame.size.height/2)), returnToKeyboardButton.frame.size.width, returnToKeyboardButton.frame.size.height)];
 	chromatophoreTableView = [[UITableView alloc] initWithFrame:CGRectMake(0, (screenRect.size.height - heightOfChromatophoreView + 50), currentKeyboardWindow.rootViewController.view.frame.size.width, heightOfChromatophoreView - 50)];
 	[chromatophoreTableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"chromatophoreReuseIdentifier"];
 	[chromatophoreTableView setDelegate:self];
 	[chromatophoreTableView setDataSource:self];
 	[chromatophoreTableView setBackgroundColor:[UIColor clearColor]];
-	[chromatophoreView setBackgroundColor:[UIColor blueColor]];
+	[[[currentKeyboardWindow rootViewController] view] addSubview:chromatophoreBackgroundView];
 	[[[currentKeyboardWindow rootViewController] view] addSubview:chromatophoreTableView];
 	[[[currentKeyboardWindow rootViewController] view] addSubview:returnToKeyboardButton];
 	shouldHideOrigEmojiView = TRUE;
