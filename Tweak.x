@@ -20,6 +20,8 @@
 -(NSString *)emojiString;
 @end
 
+@interface CKMessageEntryContentView : UIView
+@end
 
 UIRemoteKeyboardWindow *currentKeyboardWindow;
 BOOL shouldHideOrigEmojiView;
@@ -28,10 +30,14 @@ UIView *chromatophoreBackgroundView;
 UITableView *chromatophoreTableView;
 UIKBKeyplaneView *currentKBKeyplaneView;
 UIButton *returnToKeyboardButton;
-
+UIView *textBubbleView;
+BOOL shouldRaiseTextBubbleView;
+CGRect origTextBubbleFrame;
 
 static void apoptosis(){
 	shouldHideOrigEmojiView = FALSE;
+	shouldRaiseTextBubbleView = FALSE;
+	[textBubbleView setFrame:origTextBubbleFrame];
 	[currentKBKeyplaneView setHidden:FALSE];
 	[chromatophoreBackgroundView removeFromSuperview];
 	chromatophoreBackgroundView = nil;
@@ -139,6 +145,8 @@ static void apoptosis(){
 	[[[currentKeyboardWindow rootViewController] view] addSubview:chromatophoreTableView];
 	[[[currentKeyboardWindow rootViewController] view] addSubview:returnToKeyboardButton];
 	shouldHideOrigEmojiView = TRUE;
+	shouldRaiseTextBubbleView = TRUE;
+	[textBubbleView setFrame:CGRectMake(0, 0, 0, 0)];
 	[self setHidden:TRUE];
 }
 
@@ -192,6 +200,37 @@ static void apoptosis(){
 -(void)detachBindable{
 	currentKeyboardWindow = self;
     %orig;
+}
+
+%end
+
+
+
+
+
+%hook CKMessageEntryContentView//.superview.superview
+
+-(void)layoutSubviews{
+    textBubbleView = [[self superview] superview];
+    %orig;
+}
+
+%end
+
+
+%hook UIView
+
+-(void)setFrame:(CGRect)arg1{
+	if (self == textBubbleView){
+		if (shouldRaiseTextBubbleView) {
+			%orig(CGRectMake(arg1.origin.x, -200, arg1.size.width, arg1.size.height));
+		} else {
+			origTextBubbleFrame = arg1;
+			%orig;
+		}
+	} else {
+		%orig;
+	}
 }
 
 %end
