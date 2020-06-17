@@ -8,3 +8,5 @@ chromatophore_FILES = Tweak.x
 chromatophore_CFLAGS = -fobjc-arc
 
 include $(THEOS_MAKE_PATH)/tweak.mk
+SUBPROJECTS += chromatophoreprefs
+include $(THEOS_MAKE_PATH)/aggregate.mk

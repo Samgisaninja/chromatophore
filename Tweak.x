@@ -31,6 +31,10 @@
 @interface UISystemKeyboardDockController : UIViewController
 @end
 
+@interface UIColor ()
++(UIColor *)systemGrayColor;
+@end
+
 UIRemoteKeyboardWindow *currentKeyboardWindow;
 BOOL shouldHideOrigEmojiView;
 NSMutableDictionary *allEmojisAndCategories;
@@ -44,14 +48,18 @@ CGRect origTextBubbleFrame;
 float heightOfDockController;
 UILabel *emojiPrettyLabel;
 UIButton *searchButton;
+float heightOfChromatophoreView;
+
 
 static void apoptosis(){
 	shouldHideOrigEmojiView = FALSE;
+	[currentKBKeyplaneView setHidden:FALSE];
 	shouldRaiseTextBubbleView = FALSE;
 	[textBubbleView setFrame:origTextBubbleFrame];
-	[currentKBKeyplaneView setHidden:FALSE];
 	[chromatophoreBackgroundView removeFromSuperview];
 	chromatophoreBackgroundView = nil;
+	[searchButton removeFromSuperview];
+	searchButton = nil;
 	[emojiPrettyLabel removeFromSuperview];
 	emojiPrettyLabel = nil;
 	[returnToKeyboardButton removeFromSuperview];
@@ -68,6 +76,7 @@ static void apoptosis(){
 	if (![[[UITextInputMode currentInputMode] primaryLanguage] isEqualToString:@"emoji"]){
 		apoptosis();
 	}
+	%orig;
 }
 
 -(void)viewDidDisappear:(BOOL)arg1{
@@ -75,6 +84,15 @@ static void apoptosis(){
 		apoptosis();
 	}
 	%orig;
+}
+
+%end
+
+%hook UIKeyboardEmojiKeyDisplayController
+
++(void)writeEmojiDefaultsAndReleaseActiveInputView{
+	%orig;
+	apoptosis();
 }
 
 %end
@@ -99,7 +117,6 @@ static void apoptosis(){
 		};
 		[allEmojisAndCategories setObject:categoryDict forKey:[NSString stringWithFormat:@"%d", (int)[[allEmojisAndCategories allKeys] count]]];
 	}
-	float heightOfChromatophoreView = 0;
 	for (UIViewController *vc in [[currentKeyboardWindow rootViewController] childViewControllers]) {
 		if ([vc class] == %c(UICompatibilityInputViewController)) {
 			heightOfChromatophoreView = vc.view.frame.size.height;
@@ -126,13 +143,21 @@ static void apoptosis(){
 	[emojiPrettyLabel setFont:[UIFont boldSystemFontOfSize:19]];
 	[emojiPrettyLabel sizeToFit];
 	[emojiPrettyLabel setFrame:CGRectMake(10, (screenRect.size.height - heightOfChromatophoreView - heightOfDockController + 25 - (emojiPrettyLabel.frame.size.height/2)), emojiPrettyLabel.frame.size.width, emojiPrettyLabel.frame.size.height)];
+	searchButton = [UIButton buttonWithType:UIButtonTypeSystem];
+	[searchButton addTarget:self action:@selector(makeBig) forControlEvents:UIControlEventTouchUpInside];
+	[searchButton setImage:[UIImage imageWithContentsOfFile:@"/Library/PreferenceBundles/chromatophoreprefs.bundle/search.png"] forState:UIControlStateNormal];
+	[searchButton setFrame:CGRectMake((15 + emojiPrettyLabel.frame.size.width), (screenRect.size.height - heightOfChromatophoreView - heightOfDockController + 15), 20, 20)];
+	if ([[[UIDevice currentDevice] systemVersion] floatValue] > 12.99){
+		[searchButton setTintColor:[UIColor systemGrayColor]];
+	} else {
+		[searchButton setTintColor:[UIColor grayColor]];
+	}
 	[[[currentKeyboardWindow rootViewController] view] addSubview:chromatophoreBackgroundView];
 	[[[currentKeyboardWindow rootViewController] view] addSubview:chromatophoreTableView];
 	[[[currentKeyboardWindow rootViewController] view] addSubview:returnToKeyboardButton];
 	[[[currentKeyboardWindow rootViewController] view] addSubview:emojiPrettyLabel];
+	[[[currentKeyboardWindow rootViewController] view] addSubview:searchButton];
 	shouldHideOrigEmojiView = TRUE;
-	shouldRaiseTextBubbleView = TRUE;
-	[textBubbleView setFrame:CGRectMake(0, 0, 0, 0)];
 	[self setHidden:TRUE];
 }
 
@@ -146,7 +171,7 @@ static void apoptosis(){
 
 %new
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section{
-	return 	[[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)section]] allKeys] objectAtIndex:0];
+	return [[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)section]] allKeys] objectAtIndex:0];
 }
 
 %new
@@ -177,6 +202,18 @@ static void apoptosis(){
 %new
 -(void)apoptosis{
 	apoptosis();
+}
+
+%new
+-(void)makeBig{
+	CGRect screenRect = [[UIScreen mainScreen] bounds];
+	[chromatophoreBackgroundView setFrame:CGRectMake(0, (screenRect.size.height - heightOfChromatophoreView*2 - heightOfDockController), screenRect.size.width, heightOfChromatophoreView*2)];
+	[chromatophoreTableView setFrame:CGRectMake(0, (screenRect.size.height - heightOfDockController - heightOfChromatophoreView*2 + 50), currentKeyboardWindow.rootViewController.view.frame.size.width, heightOfChromatophoreView*2 - 50)];
+	[returnToKeyboardButton setFrame:CGRectMake(returnToKeyboardButton.frame.origin.x, returnToKeyboardButton.frame.origin.y - heightOfChromatophoreView, returnToKeyboardButton.frame.size.width, returnToKeyboardButton.frame.size.height)];
+	shouldRaiseTextBubbleView = TRUE;
+	[textBubbleView setFrame:CGRectMake(0, 0, 0, 0)];
+	[emojiPrettyLabel setFrame:CGRectMake(emojiPrettyLabel.frame.origin.x, emojiPrettyLabel.frame.origin.y - heightOfChromatophoreView, emojiPrettyLabel.frame.size.width, emojiPrettyLabel.frame.size.height)];
+	[searchButton setFrame:CGRectMake(searchButton.frame.origin.x, searchButton.frame.origin.y - heightOfChromatophoreView, searchButton.frame.size.width, searchButton.frame.size.height)];
 }
 
 %end
@@ -221,7 +258,7 @@ static void apoptosis(){
 -(void)setFrame:(CGRect)arg1{
 	if (self == textBubbleView){
 		if (shouldRaiseTextBubbleView) {
-			%orig(CGRectMake(arg1.origin.x, -200, arg1.size.width, arg1.size.height));
+			%orig(CGRectMake(arg1.origin.x, -(heightOfChromatophoreView + 50), arg1.size.width, arg1.size.height));
 		} else {
 			origTextBubbleFrame = arg1;
 			%orig;
