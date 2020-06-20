@@ -49,7 +49,7 @@ float heightOfDockController;
 UILabel *emojiPrettyLabel;
 UIButton *searchButton;
 float heightOfChromatophoreView;
-
+float yDiff;
 
 static void apoptosis(){
 	shouldHideOrigEmojiView = FALSE;
@@ -101,22 +101,46 @@ static void apoptosis(){
 
 -(void)setEmojiKeyManager:(id/*UIKeyboardEmojiKeyDisplayController**/)arg1{
 	%orig;
-	currentKBKeyplaneView = self;
-	for (int i = 0; i < (int)[UIKeyboardEmojiCategory numberOfCategories]; i++) {
-		UIKeyboardEmojiCategory *category = [UIKeyboardEmojiCategory categoryForType:i];
-		NSString *categoryName = [UIKeyboardEmojiCategory displayName:i];
-		if (!categoryName || [categoryName containsString:@"Recent"] || [categoryName containsString:@"Frequently"] || ![category valueForKey:@"emoji"]) {
-			continue;
-		}
-		NSMutableArray *emojiInCategory = [[NSMutableArray alloc] init];
+	
+	NSMutableArray *allEmoji = [[NSMutableArray alloc] init];
+	for (int a = 0; a < (int)[UIKeyboardEmojiCategory numberOfCategories]; a++) {
+		UIKeyboardEmojiCategory *category = [UIKeyboardEmojiCategory categoryForType:a];
+		//NSString *categoryName = [UIKeyboardEmojiCategory displayName:a];
 		for (UIKeyboardEmoji *emote in [category valueForKey:@"emoji"]) {
-			[emojiInCategory addObject:[emote emojiString]];
+			if (![allEmoji containsObject:[emote emojiString]]) {
+				[allEmoji addObject:[emote emojiString]];
+			}
 		}
-		NSDictionary *categoryDict = @{
-			 categoryName : emojiInCategory
-		};
-		[allEmojisAndCategories setObject:categoryDict forKey:[NSString stringWithFormat:@"%d", (int)[[allEmojisAndCategories allKeys] count]]];
 	}
+	NSMutableArray *knownEmoji = [[NSMutableArray alloc] init];
+	allEmojisAndCategories = [[NSMutableDictionary alloc] initWithContentsOfURL:[NSURL fileURLWithPath:@"/var/mobile/Library/Preferences/com.samgisaninja.chromatophore.emoji.plist"]];
+	for (int b = 0; b < [[allEmojisAndCategories allKeys] count]; b++) {
+		NSDictionary *customCategory = [allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", b]];
+		for (int c = 0; c < ([customCategory count] - 1); c++){
+			NSDictionary *emojiInfoDict = [customCategory objectForKey:[NSString stringWithFormat:@"%d", c]];
+			[knownEmoji addObject:[emojiInfoDict objectForKey:@"string"]];
+		}
+	}
+	NSMutableArray *unknownEmoji = [[NSMutableArray alloc] initWithArray:allEmoji];
+	[unknownEmoji removeObjectsInArray:knownEmoji];
+	NSMutableDictionary *unknownDict = [[NSMutableDictionary alloc] init];
+	[unknownDict setObject:@"Ungrouped" forKey:@"name"];
+	for (NSString *unknownEmojiStr in unknownEmoji){
+		NSMutableString *emojiMutStr = [[NSMutableString alloc] initWithString:unknownEmojiStr];
+		CFMutableStringRef emojiCFStr = (__bridge CFMutableStringRef)emojiMutStr;
+		CFRange range = CFRangeMake(0, CFStringGetLength(emojiCFStr));
+		CFStringTransform(emojiCFStr, &range, kCFStringTransformToUnicodeName, FALSE);
+		NSMutableString *emojiNameMutable = (__bridge NSMutableString *)emojiCFStr;
+		NSString *emojiName = [[[emojiNameMutable stringByReplacingOccurrencesOfString:@"\\N" withString:@""] stringByReplacingOccurrencesOfString:@"{" withString:@" "] stringByReplacingOccurrencesOfString:@"}" withString:@" "];
+		NSDictionary *emojiDict = @{
+			@"string" : unknownEmojiStr,
+			@"name" : emojiName
+		};
+		[unknownDict setObject:emojiDict forKey:[NSString stringWithFormat:@"%d", (int)[[unknownDict allKeys] count]]];
+	}
+	[allEmojisAndCategories setObject:unknownDict forKey:[NSString stringWithFormat:@"%d", (int)[[allEmojisAndCategories allKeys] count]]];
+	
+	currentKBKeyplaneView = self;
 	for (UIViewController *vc in [[currentKeyboardWindow rootViewController] childViewControllers]) {
 		if ([vc class] == %c(UICompatibilityInputViewController)) {
 			heightOfChromatophoreView = vc.view.frame.size.height;
@@ -171,7 +195,7 @@ static void apoptosis(){
 
 %new
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section{
-	return [[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)section]] allKeys] objectAtIndex:0];
+	return [[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)section]] objectForKey:@"name"];
 }
 
 %new
@@ -181,13 +205,14 @@ static void apoptosis(){
 
 %new
 -(NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section{
-	return [[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)section]] objectForKey:[[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)section]] allKeys] objectAtIndex:0]] count];
+	return ([[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)section]] allKeys] count] - 1);
 }
 
 %new
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"chromatophoreReuseIdentifier" forIndexPath:indexPath];
-	[[cell textLabel] setText:[[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)[indexPath section]]] objectForKey:[[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)[indexPath section]]] allKeys] objectAtIndex:0]] objectAtIndex:[indexPath row]]];
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"chromatophoreReuseIdentifier"];
+	[[cell textLabel] setText:[[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)[indexPath section]]] objectForKey:[NSString stringWithFormat:@"%d", (int)[indexPath row]]] objectForKey:@"string"]];
+	[[cell detailTextLabel] setText:[[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)[indexPath section]]] objectForKey:[NSString stringWithFormat:@"%d", (int)[indexPath row]]] objectForKey:@"name"]];
 	[[cell contentView] setBackgroundColor:[UIColor clearColor]];
 	[[cell backgroundView] setBackgroundColor:[UIColor clearColor]];
 	[cell setBackgroundColor:[UIColor clearColor]];
@@ -207,13 +232,16 @@ static void apoptosis(){
 %new
 -(void)makeBig{
 	CGRect screenRect = [[UIScreen mainScreen] bounds];
-	[chromatophoreBackgroundView setFrame:CGRectMake(0, (screenRect.size.height - heightOfChromatophoreView*2 - heightOfDockController), screenRect.size.width, heightOfChromatophoreView*2)];
-	[chromatophoreTableView setFrame:CGRectMake(0, (screenRect.size.height - heightOfDockController - heightOfChromatophoreView*2 + 50), currentKeyboardWindow.rootViewController.view.frame.size.width, heightOfChromatophoreView*2 - 50)];
-	[returnToKeyboardButton setFrame:CGRectMake(returnToKeyboardButton.frame.origin.x, returnToKeyboardButton.frame.origin.y - heightOfChromatophoreView, returnToKeyboardButton.frame.size.width, returnToKeyboardButton.frame.size.height)];
+	yDiff = searchButton.frame.origin.y - (225 - searchButton.frame.size.height/2);
+	[chromatophoreBackgroundView setFrame:CGRectMake(0, 200, screenRect.size.width, (screenRect.size.height - 100))];
+	[chromatophoreTableView setFrame:CGRectMake(0, 250, screenRect.size.width, (screenRect.size.height - 150))];
+	[returnToKeyboardButton setFrame:CGRectMake(returnToKeyboardButton.frame.origin.x, (225 - returnToKeyboardButton.frame.size.height/2), returnToKeyboardButton.frame.size.width, returnToKeyboardButton.frame.size.height)];
 	shouldRaiseTextBubbleView = TRUE;
-	[textBubbleView setFrame:CGRectMake(0, 0, 0, 0)];
-	[emojiPrettyLabel setFrame:CGRectMake(emojiPrettyLabel.frame.origin.x, emojiPrettyLabel.frame.origin.y - heightOfChromatophoreView, emojiPrettyLabel.frame.size.width, emojiPrettyLabel.frame.size.height)];
-	[searchButton setFrame:CGRectMake(searchButton.frame.origin.x, searchButton.frame.origin.y - heightOfChromatophoreView, searchButton.frame.size.width, searchButton.frame.size.height)];
+	if ([[[NSBundle mainBundle] bundleIdentifier] isEqualToString:@"com.apple.MobileSMS"]){
+		[textBubbleView setFrame:CGRectMake(0, 0, 0, 0)];
+	}
+	[emojiPrettyLabel setFrame:CGRectMake(emojiPrettyLabel.frame.origin.x, 225 - emojiPrettyLabel.frame.size.height/2, emojiPrettyLabel.frame.size.width, emojiPrettyLabel.frame.size.height)];
+	[searchButton setFrame:CGRectMake(searchButton.frame.origin.x, 225 - searchButton.frame.size.height/2, searchButton.frame.size.width, searchButton.frame.size.height)];
 }
 
 %end
@@ -258,7 +286,7 @@ static void apoptosis(){
 -(void)setFrame:(CGRect)arg1{
 	if (self == textBubbleView){
 		if (shouldRaiseTextBubbleView) {
-			%orig(CGRectMake(arg1.origin.x, -(heightOfChromatophoreView + 50), arg1.size.width, arg1.size.height));
+			%orig(CGRectMake(arg1.origin.x, - yDiff, origTextBubbleFrame.size.width, origTextBubbleFrame.size.height));
 		} else {
 			origTextBubbleFrame = arg1;
 			%orig;

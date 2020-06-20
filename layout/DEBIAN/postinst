@@ -1,0 +1,4 @@
+echo "Downloading emoji categories..."
+curl -# https://raw.githubusercontent.com/Samgisaninja/chromatophore/master/emoji.plist -o /var/mobile/Library/Preferences/com.samgisaninja.chromatophore.emoji.plist
+echo "Done!"
+echo "Chromatophore by Sam Gardner // Samg_is_a_Ninja. Thanks for downloading."

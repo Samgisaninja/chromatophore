@@ -8,7 +8,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>chromatophoreprefs First Page</string>
+			<string>Enable/Disable all functionality</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -18,12 +18,26 @@
 			<key>defaults</key>
 			<string>com.samgisaninja.chromatophoreprefs</string>
 			<key>key</key>
-			<string>AwesomeSwitch1</string>
+			<string>isEnabled</string>
 			<key>label</key>
-			<string>Awesome Switch 1</string>
+			<string>Enabled</string>
+			<key>PostNotification</key>
+			<string>com.samgisaninja.chromatophoreprefs/ReloadPrefs</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>label</key>
+			<string>Refresh Emoji grouping</string>
+			<key>action</key>
+			<string>refreshEmoji</string>
 		</dict>
 	</array>
 	<key>title</key>
-	<string>chromatophoreprefs</string>
+	<string>Chromatophore</string>
 </dict>
 </plist>
