@@ -5,7 +5,8 @@
 @interface UIRemoteKeyboardWindow : UIWindow
 @end
 
-@interface UIKBKeyplaneView : UIView <UITableViewDataSource, UITableViewDelegate>
+@interface UIKBKeyplaneView : UIView <UITableViewDataSource, UITableViewDelegate, UISearchResultsUpdating, UISearchBarDelegate>
+@property (strong, nonatomic) UISearchController *searchController;
 @end
 
 @interface UIKeyboardEmojiCategory : NSObject
@@ -35,8 +36,10 @@
 +(UIColor *)systemGrayColor;
 @end
 
-UIRemoteKeyboardWindow *currentKeyboardWindow;
-BOOL shouldHideOrigEmojiView;
+@interface UIWindow ()
++(UIWindow *)keyWindow;
+@end
+
 NSMutableDictionary *allEmojisAndCategories;
 UIView *chromatophoreBackgroundView;
 UITableView *chromatophoreTableView;
@@ -45,15 +48,19 @@ UIButton *returnToKeyboardButton;
 UIView *textBubbleView;
 BOOL shouldRaiseTextBubbleView;
 CGRect origTextBubbleFrame;
-float heightOfDockController;
 UILabel *emojiPrettyLabel;
 UIButton *searchButton;
 float heightOfChromatophoreView;
 float yDiff;
+NSMutableArray *allEmojis;
+NSMutableArray *allEmojisForFilter;
+NSMutableArray *filteredEmojis;
+BOOL isFiltered;
+id currentTextEditor;
+UITextRange *cursorPos;
+id userInfo;
 
 static void apoptosis(){
-	shouldHideOrigEmojiView = FALSE;
-	[currentKBKeyplaneView setHidden:FALSE];
 	shouldRaiseTextBubbleView = FALSE;
 	[textBubbleView setFrame:origTextBubbleFrame];
 	[chromatophoreBackgroundView removeFromSuperview];
@@ -68,47 +75,74 @@ static void apoptosis(){
 	chromatophoreTableView = nil;
 }
 
+@interface chromatophoreTableView
+
+
 %group Default
 
 %hook UIViewController
 
--(void)viewDidAppear:(BOOL)arg1{
-	if (![[[UITextInputMode currentInputMode] primaryLanguage] isEqualToString:@"emoji"]){
-		apoptosis();
-	}
+-(void)viewDidLoad{
+	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(keyboardWillChangeFrame:) name:UIKeyboardWillChangeFrameNotification object:nil];
 	%orig;
 }
 
 -(void)viewDidDisappear:(BOOL)arg1{
-	if (![[[UITextInputMode currentInputMode] primaryLanguage] isEqualToString:@"emoji"]){
-		apoptosis();
+	if ([self class] != NSClassFromString(@"UICompatibilityInputViewController")){
+		if ([self class] != NSClassFromString(@"UISystemInputAssistantViewController")){
+			if ([self class] != NSClassFromString(@"UIPredictionViewController")){
+				apoptosis();
+			}
+		}
 	}
+	%orig;
+}
+
+-(void)dealloc{
+	[[NSNotificationCenter defaultCenter] removeObserver:self];
+	%orig;
+}
+
+%new
+-(void)keyboardWillChangeFrame:(NSNotification *)arg1{
+	CGRect keyboardRect = [arg1.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue];
+	heightOfChromatophoreView = keyboardRect.size.height;
+}
+
+%end
+
+%hook UITextView
+
+-(void)textInputDidChangeSelection:(UITextView *)arg1{
+	currentTextEditor = self;
+	cursorPos = [self selectedTextRange];
 	%orig;
 }
 
 %end
 
-%hook UIKeyboardEmojiKeyDisplayController
+%hook UITextField
 
-+(void)writeEmojiDefaultsAndReleaseActiveInputView{
+-(void)fieldEditorDidChangeSelection:(id)arg1{
+	currentTextEditor = self;
+	cursorPos = [self selectedTextRange];
 	%orig;
-	apoptosis();
 }
 
 %end
 
 %hook UIKBKeyplaneView
+%property (strong, nonatomic) UISearchController *searchController;
 
 -(void)setEmojiKeyManager:(id/*UIKeyboardEmojiKeyDisplayController**/)arg1{
 	%orig;
 	
-	NSMutableArray *allEmoji = [[NSMutableArray alloc] init];
+	allEmojis = [[NSMutableArray alloc] init];
 	for (int a = 0; a < (int)[UIKeyboardEmojiCategory numberOfCategories]; a++) {
 		UIKeyboardEmojiCategory *category = [UIKeyboardEmojiCategory categoryForType:a];
-		//NSString *categoryName = [UIKeyboardEmojiCategory displayName:a];
 		for (UIKeyboardEmoji *emote in [category valueForKey:@"emoji"]) {
-			if (![allEmoji containsObject:[emote emojiString]]) {
-				[allEmoji addObject:[emote emojiString]];
+			if (![allEmojis containsObject:[emote emojiString]]) {
+				[allEmojis addObject:[emote emojiString]];
 			}
 		}
 	}
@@ -121,7 +155,7 @@ static void apoptosis(){
 			[knownEmoji addObject:[emojiInfoDict objectForKey:@"string"]];
 		}
 	}
-	NSMutableArray *unknownEmoji = [[NSMutableArray alloc] initWithArray:allEmoji];
+	NSMutableArray *unknownEmoji = [[NSMutableArray alloc] initWithArray:allEmojis];
 	[unknownEmoji removeObjectsInArray:knownEmoji];
 	NSMutableDictionary *unknownDict = [[NSMutableDictionary alloc] init];
 	[unknownDict setObject:@"Ungrouped" forKey:@"name"];
@@ -136,28 +170,31 @@ static void apoptosis(){
 			@"string" : unknownEmojiStr,
 			@"name" : emojiName
 		};
-		[unknownDict setObject:emojiDict forKey:[NSString stringWithFormat:@"%d", (int)[[unknownDict allKeys] count]]];
+		[unknownDict setObject:emojiDict forKey:[NSString stringWithFormat:@"%d", ((int)[[unknownDict allKeys] count] - 1)]];
+
 	}
 	[allEmojisAndCategories setObject:unknownDict forKey:[NSString stringWithFormat:@"%d", (int)[[allEmojisAndCategories allKeys] count]]];
+	allEmojisForFilter = [[NSMutableArray alloc] init];
+	for (int d = 0; d < [allEmojisAndCategories count]; d++) {
+        NSDictionary *categoryDictionary = [allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", d]];
+        for (int e = 0; e < ([[categoryDictionary allKeys] count] - 1); e++) {
+            NSDictionary *emojiDict = [categoryDictionary objectForKey:[NSString stringWithFormat:@"%d", e]];
+            [allEmojisForFilter addObject:emojiDict];
+        }
+    }
 	
-	currentKBKeyplaneView = self;
-	for (UIViewController *vc in [[currentKeyboardWindow rootViewController] childViewControllers]) {
-		if ([vc class] == %c(UICompatibilityInputViewController)) {
-			heightOfChromatophoreView = vc.view.frame.size.height;
-			break;
-		}
-	}
+	
 	CGRect screenRect = [[UIScreen mainScreen] bounds];
-	chromatophoreBackgroundView = [[UIView alloc] initWithFrame:CGRectMake(0, (screenRect.size.height - heightOfChromatophoreView - heightOfDockController), screenRect.size.width, heightOfChromatophoreView)];
-	[chromatophoreBackgroundView setBackgroundColor:[UIColor clearColor]];
+	chromatophoreBackgroundView = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleProminent]];
+	[chromatophoreBackgroundView setFrame:CGRectMake(0, (screenRect.size.height - heightOfChromatophoreView), screenRect.size.width, heightOfChromatophoreView)];
 	[chromatophoreBackgroundView setUserInteractionEnabled:FALSE];
 	returnToKeyboardButton = [UIButton buttonWithType:UIButtonTypeCustom];
 	[returnToKeyboardButton addTarget:self action:@selector(apoptosis) 	forControlEvents:UIControlEventTouchUpInside];
 	[returnToKeyboardButton setTitle:@"Return to Keyboard" forState:UIControlStateNormal];
 	[[returnToKeyboardButton titleLabel] setFont:[UIFont systemFontOfSize:15]];
 	[returnToKeyboardButton sizeToFit];
-	[returnToKeyboardButton setFrame:CGRectMake((screenRect.size.width - returnToKeyboardButton.frame.size.width - 10), (screenRect.size.height - heightOfChromatophoreView - heightOfDockController + 25 - (returnToKeyboardButton.frame.size.height/2)), returnToKeyboardButton.frame.size.width, returnToKeyboardButton.frame.size.height)];
-	chromatophoreTableView = [[UITableView alloc] initWithFrame:CGRectMake(0, (screenRect.size.height - heightOfDockController - heightOfChromatophoreView + 50), currentKeyboardWindow.rootViewController.view.frame.size.width, heightOfChromatophoreView - 50)];
+	[returnToKeyboardButton setFrame:CGRectMake((screenRect.size.width - returnToKeyboardButton.frame.size.width - 10), (screenRect.size.height - heightOfChromatophoreView + 25 - (returnToKeyboardButton.frame.size.height/2)), returnToKeyboardButton.frame.size.width, returnToKeyboardButton.frame.size.height)];
+	chromatophoreTableView = [[UITableView alloc] initWithFrame:CGRectMake(0, (screenRect.size.height - heightOfChromatophoreView + 50), screenRect.size.width, heightOfChromatophoreView - 50)];
 	[chromatophoreTableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"chromatophoreReuseIdentifier"];
 	[chromatophoreTableView setDelegate:self];
 	[chromatophoreTableView setDataSource:self];
@@ -166,53 +203,61 @@ static void apoptosis(){
 	[emojiPrettyLabel setText:@"Emoji"];
 	[emojiPrettyLabel setFont:[UIFont boldSystemFontOfSize:19]];
 	[emojiPrettyLabel sizeToFit];
-	[emojiPrettyLabel setFrame:CGRectMake(10, (screenRect.size.height - heightOfChromatophoreView - heightOfDockController + 25 - (emojiPrettyLabel.frame.size.height/2)), emojiPrettyLabel.frame.size.width, emojiPrettyLabel.frame.size.height)];
+	[emojiPrettyLabel setFrame:CGRectMake(10, (screenRect.size.height - heightOfChromatophoreView + 25 - (emojiPrettyLabel.frame.size.height/2)), emojiPrettyLabel.frame.size.width, emojiPrettyLabel.frame.size.height)];
 	searchButton = [UIButton buttonWithType:UIButtonTypeSystem];
 	[searchButton addTarget:self action:@selector(makeBig) forControlEvents:UIControlEventTouchUpInside];
 	[searchButton setImage:[UIImage imageWithContentsOfFile:@"/Library/PreferenceBundles/chromatophoreprefs.bundle/search.png"] forState:UIControlStateNormal];
-	[searchButton setFrame:CGRectMake((15 + emojiPrettyLabel.frame.size.width), (screenRect.size.height - heightOfChromatophoreView - heightOfDockController + 15), 20, 20)];
+	[searchButton setFrame:CGRectMake((15 + emojiPrettyLabel.frame.size.width), (screenRect.size.height - heightOfChromatophoreView + 15), 20, 20)];
 	if ([[[UIDevice currentDevice] systemVersion] floatValue] > 12.99){
 		[searchButton setTintColor:[UIColor systemGrayColor]];
 	} else {
 		[searchButton setTintColor:[UIColor grayColor]];
 	}
-	[[[currentKeyboardWindow rootViewController] view] addSubview:chromatophoreBackgroundView];
-	[[[currentKeyboardWindow rootViewController] view] addSubview:chromatophoreTableView];
-	[[[currentKeyboardWindow rootViewController] view] addSubview:returnToKeyboardButton];
-	[[[currentKeyboardWindow rootViewController] view] addSubview:emojiPrettyLabel];
-	[[[currentKeyboardWindow rootViewController] view] addSubview:searchButton];
-	shouldHideOrigEmojiView = TRUE;
-	[self setHidden:TRUE];
-}
-
--(void)setHidden:(BOOL)arg1{
-	if (shouldHideOrigEmojiView) {
-		%orig(TRUE);
-	} else {
-		%orig;
-	}
+	[[UIApplication sharedApplication] sendAction:@selector(resignFirstResponder) to:nil from:nil forEvent:nil];
+	[[[[UIWindow keyWindow] rootViewController] view] addSubview:chromatophoreBackgroundView];
+	[[[[UIWindow keyWindow] rootViewController] view] addSubview:chromatophoreTableView];
+	[[[[UIWindow keyWindow] rootViewController] view] addSubview:returnToKeyboardButton];
+	[[[[UIWindow keyWindow] rootViewController] view] addSubview:emojiPrettyLabel];
+	[[[[UIWindow keyWindow] rootViewController] view] addSubview:searchButton];
 }
 
 %new
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section{
-	return [[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)section]] objectForKey:@"name"];
+	if (isFiltered) {
+		return @"Search";
+	} else {
+		return [[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)section]] objectForKey:@"name"];
+	}
 }
 
 %new
 -(NSInteger)numberOfSectionsInTableView:(UITableView *)tableView{
-	return [[allEmojisAndCategories allKeys] count];
+	if (isFiltered) {
+		return 1;
+	} else {
+		return [[allEmojisAndCategories allKeys] count];
+	}
 }
 
 %new
 -(NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section{
-	return ([[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)section]] allKeys] count] - 1);
+	if (isFiltered) {
+		return [filteredEmojis count];
+	} else {
+		return ([[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)section]] allKeys] count] - 1);
+	}
 }
 
 %new
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"chromatophoreReuseIdentifier"];
-	[[cell textLabel] setText:[[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)[indexPath section]]] objectForKey:[NSString stringWithFormat:@"%d", (int)[indexPath row]]] objectForKey:@"string"]];
-	[[cell detailTextLabel] setText:[[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)[indexPath section]]] objectForKey:[NSString stringWithFormat:@"%d", (int)[indexPath row]]] objectForKey:@"name"]];
+	if (isFiltered) {
+		[[cell textLabel] setText:[[filteredEmojis objectAtIndex:[indexPath row]] objectForKey:@"string"]];
+		[[cell detailTextLabel] setText:[[filteredEmojis objectAtIndex:[indexPath row]] objectForKey:@"name"]];
+	} else {
+		[[cell textLabel] setText:[[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)[indexPath section]]] objectForKey:[NSString stringWithFormat:@"%d", (int)[indexPath row]]] objectForKey:@"string"]];
+		[[cell detailTextLabel] setText:[[[allEmojisAndCategories objectForKey:[NSString stringWithFormat:@"%d", (int)[indexPath section]]] objectForKey:[NSString stringWithFormat:@"%d", (int)[indexPath row]]] objectForKey:@"name"]];
+	}
 	[[cell contentView] setBackgroundColor:[UIColor clearColor]];
 	[[cell backgroundView] setBackgroundColor:[UIColor clearColor]];
 	[cell setBackgroundColor:[UIColor clearColor]];
@@ -221,7 +266,8 @@ static void apoptosis(){
 
 %new
 -(void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath{
-	[[UIKeyboardImpl sharedInstance] insertText:[[[self tableView:chromatophoreTableView cellForRowAtIndexPath:indexPath] textLabel] text]];
+	[currentTextEditor replaceRange:cursorPos withText:[[[self tableView:chromatophoreTableView cellForRowAtIndexPath:indexPath] textLabel] text]];
+	[tableView deselectRowAtIndexPath:indexPath animated:TRUE];
 }
 
 %new
@@ -241,23 +287,40 @@ static void apoptosis(){
 		[textBubbleView setFrame:CGRectMake(0, 0, 0, 0)];
 	}
 	[emojiPrettyLabel setFrame:CGRectMake(emojiPrettyLabel.frame.origin.x, 225 - emojiPrettyLabel.frame.size.height/2, emojiPrettyLabel.frame.size.width, emojiPrettyLabel.frame.size.height)];
-	[searchButton setFrame:CGRectMake(searchButton.frame.origin.x, 225 - searchButton.frame.size.height/2, searchButton.frame.size.width, searchButton.frame.size.height)];
+	[searchButton removeFromSuperview];
+	searchButton = nil;
+	[self setSearchController:[[UISearchController alloc] initWithSearchResultsController:nil]];
+    [[self searchController] setSearchResultsUpdater:self];
+    [[self searchController] setObscuresBackgroundDuringPresentation:FALSE];
+    [[[self searchController] searchBar] setDelegate:self];
+    [chromatophoreTableView setTableHeaderView:[[self searchController] searchBar]];
+    [[[self searchController] searchBar] sizeToFit];
+}
+
+%new
+- (void)updateSearchResultsForSearchController:(UISearchController *)searchController {
+    if ([[[searchController searchBar] text] length] > 0) {
+        filteredEmojis = [[NSMutableArray alloc] init];
+        for (NSDictionary *emojiDict in allEmojisForFilter) {
+            NSString *emojiName = [emojiDict objectForKey:@"name"];
+            NSRange range = [emojiName rangeOfString:[[searchController searchBar] text] options:NSCaseInsensitiveSearch];
+            if (range.location != NSNotFound) {
+                [filteredEmojis addObject:emojiDict];
+            }
+        }
+		isFiltered = TRUE;
+        [chromatophoreTableView reloadData];
+    } else {
+        isFiltered = FALSE;
+        [chromatophoreTableView reloadData];
+    }
 }
 
 %end
 
-%hook UIRemoteKeyboardWindow
-
--(void)detachBindable{
-	currentKeyboardWindow = self;
-    %orig;
-}
-
 %end
 
-
-
-
+%group Messages
 
 %hook CKMessageEntryContentView
 
@@ -268,18 +331,6 @@ static void apoptosis(){
 
 %end
 
-%hook UISystemKeyboardDockController
-
--(void)viewDidLoad{
-	heightOfDockController = 65;
-	%orig;
-}
-
-%end
-
-%end
-
-%group Messages
 
 %hook UIView
 
@@ -303,7 +354,6 @@ static void apoptosis(){
 %ctor{
 	if ([[[[NSProcessInfo processInfo] arguments] objectAtIndex:0] containsString:@"/Application"] || [[[[NSProcessInfo processInfo] arguments] objectAtIndex:0] containsString:@"SpringBoard.app"]) {
 		allEmojisAndCategories = [[NSMutableDictionary alloc] init];
-		
 		%init(Default);
 		if ([[[[NSProcessInfo processInfo] arguments] objectAtIndex:0] containsString:@"MobileSMS.app"]){
 			%init(Messages);
